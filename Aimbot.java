@@ -1,59 +1,107 @@
-import java.lang.System;
-import java.util.Arrays;
-import java.awt.image.BufferedImage;
 import javax.imageio.ImageIO;
+import javax.swing.*;
+import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.awt.image.ColorModel;
+import java.awt.image.WritableRaster;
 import java.io.File;
 import java.io.IOException;
-import java.awt.Color;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
+
 
 class Aimbot {
-  public static void main(String[] args) throws IOException  {
 
-    String path = args[0];
-    System.out.println(path);
+  private List<ColorConfig> colorConfigs = Arrays.asList(
+          new ColorConfig(18, 360, 0, 80, 100, 1),
+          new ColorConfig(220, 360, 0, 83, 100, 1)
+  );
 
-    BufferedImage img = ImageIO.read(new File(path));
+  private BufferedImage takeScreenshot() throws AWTException {
+    return new Robot().createScreenCapture(GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds());
+  }
 
-    int width = img.getWidth();
-    int height = img.getHeight();
+  private Aimbot() throws IOException, AWTException {
 
+    BufferedImage img = takeScreenshot();
+    ImageIO.write(img, "png", new File("gen/screenshot.png"));
 
-    //double CEIL = 0.05;
-    double CEIL = 0.1;
+    List<BufferedImage> colorLayers = new ArrayList<>();
 
-    for (int i=0; i<height; i++) {
-      for (int j=0; j<width; j++) {
-        Color current = new Color(img.getRGB(j,i));
-        float[] hsb = Color.RGBtoHSB(current.getRed(),current.getGreen(), current.getBlue(), null);
+    for (int idColorConfig = 0; idColorConfig < colorConfigs.size(); idColorConfig++) {
 
-        int target = 80;
-        double TARGET_MAX = 100;
-        float key = hsb[1];
-        double diffPct = Collections.min(Arrays.asList(
-          Math.abs((key*TARGET_MAX-TARGET_MAX)-target),
-          Math.abs((key*TARGET_MAX)-target),
-          Math.abs((key*TARGET_MAX+TARGET_MAX)-target)
-        ))/TARGET_MAX;
+      ColorModel cm = img.getColorModel();
+      WritableRaster raster = img.copyData(null);
 
-        int target2 = 18;
-        double TARGET_MAX2 = 360;
-        float key2 = hsb[0];
-        double diffPct2 = Collections.min(Arrays.asList(
-          Math.abs((key2*TARGET_MAX2-TARGET_MAX2)-target2),
-          Math.abs((key2*TARGET_MAX2)-target2),
-          Math.abs((key2*TARGET_MAX2+TARGET_MAX2)-target2)
-        ))/TARGET_MAX2;
+      BufferedImage copy = new BufferedImage(img.getWidth(), img.getHeight(), BufferedImage.TYPE_INT_ARGB);
+      colorLayers.add(copy);
 
-        double avDiffPct = (diffPct + diffPct2) / 2;
+      ColorConfig currentColorConfig = colorConfigs.get(idColorConfig);
 
-        int diff255 = (int)Math.round((avDiffPct > CEIL ? 1 : avDiffPct) * 255);
-        Color resColor = new Color(diff255, diff255, diff255);
-        img.setRGB(j,i,resColor.getRGB());
+      int width = img.getWidth();
+      int height = img.getHeight();
+
+      double CEIL = 0.1;
+
+      for (int i=0; i<height; i++) {
+        for (int j=0; j<width; j++) {
+          Color current = new Color(img.getRGB(j,i));
+          float[] hsb = Color.RGBtoHSB(current.getRed(),current.getGreen(), current.getBlue(), null);
+
+          List<Double> allPcts = Arrays.asList(
+                  getDiffPct(currentColorConfig.targetSaturation, currentColorConfig.targetSaturationMax, hsb[currentColorConfig.saturationIndex]),
+                  getDiffPct(currentColorConfig.targetHue, currentColorConfig.targetHueMax, hsb[currentColorConfig.hueIndex])
+          );
+          double avDiffPct = calculateAverage(allPcts);
+
+          int diff255 = (int)Math.round((avDiffPct > CEIL ? 1 : 0) * 255);
+          int alpha = (int)Math.round((avDiffPct > CEIL ? 0 : 1) * 255);
+          Color resColor = new Color(diff255, diff255, diff255, alpha);
+          colorLayers.get(idColorConfig).setRGB(j,i,resColor.getRGB());
+        }
       }
+
+      ImageIO.write(colorLayers.get(idColorConfig), "png", new File("gen/output"+idColorConfig+".png"));
     }
 
-    File outputfile = new File("output.png");
-    ImageIO.write(img, "png", outputfile);
+    BufferedImage colorLayer = colorLayers.get(0);
+
+    ColorPanel cp = new ColorPanel();
+    cp.setImage(colorLayer);
+
+    JFrame frame = new JFrame("Glass aim");
+    frame.setLocationByPlatform(false);
+    frame.setUndecorated(true);
+    frame.setExtendedState(JFrame.MAXIMIZED_BOTH);
+    frame.setBackground(new Color(0, 0, 0, 0));
+    frame.add(cp);
+    frame.setAlwaysOnTop(true);
+    frame.pack();
+    frame.setVisible(true);
+  }
+
+  public static void main(String[] args) throws IOException, AWTException {
+    new Aimbot();
+  }
+
+  private static double getDiffPct(int target, double targetMax, float comp) {
+    return Collections.min(Arrays.asList(
+          Math.abs((comp * targetMax - targetMax)-target),
+          Math.abs((comp * targetMax)-target),
+          Math.abs((comp * targetMax + targetMax)-target)
+        ))/ targetMax;
+  }
+
+  private double calculateAverage(List<Double> values) {
+    double sum = 0;
+    if(!values.isEmpty()) {
+      for (double v : values) {
+        sum += v;
+      }
+      return sum / values.size();
+    }
+    return sum;
   }
 }
